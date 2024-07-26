@@ -1804,6 +1804,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ee2393c4a91429dffb4bedf19f4d6abf27d8a732c8ce4980305d782e5426d57"
 
 [[package]]
+name = "debug"
+version = "2.1.0"
+dependencies = [
+ "bincode",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "serde",
+ "serde_bytes",
+ "solana-accounts-db",
+ "solana-gossip",
+ "solana-ledger",
+ "solana-runtime",
+ "solana-sdk",
+]
+
+[[package]]
 name = "der-parser"
 version = "8.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
