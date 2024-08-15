@@ -11,6 +11,7 @@ edition.workspace = true
 bincode.workspace = true
 rand.workspace = true
 serde.workspace = true
+bs58 = { workspace = true }
 serde_bytes.workspace = true
 solana-gossip = { workspace = true }
 solana-sdk = { workspace = true }
