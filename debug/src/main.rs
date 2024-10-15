@@ -5,18 +5,18 @@
 
 // fn main() {
 //     let epoch: u64 = 668;
-    
+
 //     let mut seed = [0u8; 32];
 //     seed[0..8].copy_from_slice(&epoch.to_le_bytes());
-    
+
 //     let bank_fields = bank_fields_from_snapshot_archives(
 //         "/home/hnewman/Documents/work/syndica/snaps/",
 //         "~/does-not-exist/",
 //         StorageAccess::Mmap
 //     ).expect("Failed to load bank fields from snapshot archives");
-    
+
 //     let slots = bank_fields.epoch_schedule.get_slots_in_epoch(epoch);
-    
+
 //     let mut stakes = bank_fields.epoch_stakes
 //         .get(&epoch)
 //         .expect("Failed to get epoch from epoch stakes")
@@ -34,7 +34,7 @@
 //     // for (pubkey, stake) in stakes.iter() {
 //     //     println!("{}: {}", pubkey, stake);
 //     // }
-    
+
 //     let leader_schedule = LeaderSchedule::new(
 //         &stakes,
 //         seed,
@@ -66,7 +66,6 @@
 //     stakes.dedup();
 // }
 
-
 // use {
 //     rand::distributions::uniform::{SampleUniform, UniformSampler},
 //     // rand::Rng,
@@ -75,7 +74,7 @@
 
 // fn main() {
 //     let epoch: u64 = 668;
-    
+
 //     let mut seed = [0u8; 32];
 //     seed[0..8].copy_from_slice(&epoch.to_le_bytes());
 
@@ -104,7 +103,7 @@
 //     let mut message = message::Message::new(&[instruction], Some(&from));
 //     message.recent_blockhash = recent_blockhash;
 //     let transaction = transaction::VersionedTransaction::try_new(message::VersionedMessage::Legacy(message), &[from_keypair]).unwrap();
-    
+
 //     let serialized = serialize(&transaction).unwrap();
 //     let encoded = bs58::encode(serialized).into_string();
 
@@ -129,7 +128,7 @@
 
 //     // let transaction_bytes: [u8; 215] = [1, 244, 3, 204, 238, 82, 27, 27, 162, 72, 117, 247, 12, 16, 239, 171, 168, 8, 17, 8, 49, 180, 220, 216, 44, 243, 97, 10, 235, 226, 17, 51, 141, 124, 242, 151, 17, 72, 123, 147, 95, 119, 197, 202, 139, 67, 82, 166, 74, 78, 79, 81, 55, 22, 98, 34, 97, 60, 195, 212, 77, 26, 24, 91, 7, 1, 0, 1, 3, 159, 193, 185, 89, 227, 77, 234, 91, 232, 234, 253, 119, 162, 105, 200, 227, 123, 90, 111, 105, 72, 53, 60, 147, 76, 154, 44, 72, 29, 165, 2, 246, 3, 229, 144, 40, 5, 196, 50, 27, 92, 158, 34, 76, 254, 41, 252, 235, 115, 67, 211, 94, 236, 153, 105, 36, 107, 71, 146, 102, 126, 58, 45, 63, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 111, 147, 32, 255, 65, 72, 38, 140, 55, 134, 52, 46, 246, 178, 29, 156, 68, 60, 135, 170, 247, 210, 39, 61, 211, 114, 241, 44, 59, 107, 253, 253, 1, 2, 2, 0, 1, 12, 2, 0, 0, 0, 100, 0, 0, 0, 0, 0, 0, 0];
 //     // let deserialized_transaction: transaction::VersionedTransaction = bincode::deserialize(&transaction_bytes).unwrap();
-    
+
 //     // println!("Transaction Bytes: {:?}", serialize(&deserialized_transaction));
 
 //     // println!("DESERIALIZED TRANSACTION");
@@ -148,8 +147,6 @@
 
 // }
 
-
-
 use std::hash::Hash;
 
 use {
@@ -157,21 +154,90 @@ use {
     std::hash::{BuildHasher, Hasher},
 };
 
+enum ShredType {
+    Code = 0b0101_1010,
+    Data = 0b1010_0101,
+}
+
 fn main() {
     let random_state = RandomState::with_seeds(0, 0, 0, 0);
+
+    // TEST HASH
+    {
+        let mut hasher = random_state.build_hasher();
+        let code_shred: ShredType = ShredType::Code;
+        let data_shred: ShredType = ShredType::Data;
+
+        code_shred.hash(&mut hasher);
+        data_shred.hash(&mut hasher);
+
+        // hasher.write_usize(data.len());
+        // let newlen = std::mem::size_of_val(&data);
+        // let ptr = data.as_ptr() as *const u8;
+        // // SAFETY: `ptr` is valid and aligned, as this macro is only used
+        // // for numeric primitives which have no padding. The new slice only
+        // // spans across `data` and is never mutated, and its total size is the
+        // // same as the original `data` so it can't be over `isize::MAX`.
+        // hasher.write(unsafe { std::slice::from_raw_parts(ptr, newlen) });
     
-    // TEST HASH SLICE
-    let mut hasher = random_state.build_hasher();
-    let data: [u8; 3] = [10, 3, 5];
-    hasher.write(&data.len().to_ne_bytes());
-    for d in &data {
-        d.hash(&mut hasher);
+        println!("{}", hasher.finish());
     }
+
+    // TEST HASH WRITE
+    let mut hasher = random_state.build_hasher();
+    hasher.write(&[]);
     println!("{}", hasher.finish());
 
-    // TEST HASH SLICE
     let mut hasher = random_state.build_hasher();
-    let data: [u8; 3] = [10, 3, 5];
-    data.hash(&mut hasher);
+    hasher.write(&[0]);
     println!("{}", hasher.finish());
+
+    let mut hasher = random_state.build_hasher();
+    hasher.write(&[91, 243, 18, 129, 64, 220, 188, 11]);
+    println!("{}", hasher.finish());
+    
+    let mut hasher = random_state.build_hasher();
+    hasher.write(&[21, 37, 138, 62, 157, 245, 23, 48, 98, 184, 127, 221, 73, 156, 24, 56]);
+    println!("{}", hasher.finish());
+
+    // // TEST HASH
+    // {
+    //     let mut hasher = random_state.build_hasher();
+    //     let data: u32 = 10;
+    
+    //     data.hash(&mut hasher);
+    //     data.hash(&mut hasher);
+    //     data.hash(&mut hasher);
+
+    //     // hasher.write_usize(data.len());
+    //     // let newlen = std::mem::size_of_val(&data);
+    //     // let ptr = data.as_ptr() as *const u8;
+    //     // // SAFETY: `ptr` is valid and aligned, as this macro is only used
+    //     // // for numeric primitives which have no padding. The new slice only
+    //     // // spans across `data` and is never mutated, and its total size is the
+    //     // // same as the original `data` so it can't be over `isize::MAX`.
+    //     // hasher.write(unsafe { std::slice::from_raw_parts(ptr, newlen) });
+    
+    //     println!("{}", hasher.finish());
+    // }
+    // {
+    //     let mut hasher = random_state.build_hasher();
+    //     let data: [u8; 0] = [];
+    
+    //     data.hash(&mut hasher);
+    //     data.hash(&mut hasher);
+    //     data.hash(&mut hasher);
+
+    //     println!("{}", hasher.finish());
+    // }
+    // {
+    //     let mut hasher = random_state.build_hasher();
+    //     let data: [u8; 3] = [10, 3, 5];
+    
+    //     data.hash(&mut hasher);
+    //     data.hash(&mut hasher);
+    //     data.hash(&mut hasher);
+    
+    //     println!("{}", hasher.finish());
+    // }
 }
