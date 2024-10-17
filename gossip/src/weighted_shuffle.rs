@@ -325,13 +325,22 @@ mod tests {
         let seed: Vec<_> = (1..).step_by(3).take(32).collect();
         let seed: [u8; 32] = seed.try_into().unwrap();
         let mut rng = ChaChaRng::from_seed(seed);
+
+        // let mut counts = [0; 10];
+        // for _ in 1..100_000 {
+        //     let sample = <i32 as SampleUniform>::Sampler::sample_single(0, 10, &mut rng);
+        //     counts[sample as usize] += 1;
+        // }
+        // println!("counts: {:?}", counts);
+
         let weights = [1, 0, 1000, 0, 0, 10, 100, 0];
         let mut counts = [0; 8];
         for _ in 0..100000 {
-            let mut shuffle = WeightedShuffle::new("", &weights).shuffle(&mut rng);
-            counts[shuffle.next().unwrap()] += 1;
-            let _ = shuffle.count(); // consume the rest.
+            let shuffle = WeightedShuffle::new("", &weights);//.shuffle(&mut rng);
+            counts[shuffle.first(&mut rng).unwrap()] += 1;
+            // let _ = shuffle.count(); // consume the rest.
         }
+        println!("counts: {:?}", counts);
         assert_eq!(counts, [95, 0, 90069, 0, 0, 908, 8928, 0]);
         let mut counts = [0; 8];
         for _ in 0..100000 {

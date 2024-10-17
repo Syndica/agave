@@ -30,7 +30,7 @@ use {
         collections::HashMap,
         iter::repeat_with,
         marker::PhantomData,
-        net::{IpAddr, SocketAddr},
+        net::{IpAddr, Ipv4Addr, SocketAddr},
         sync::{Arc, RwLock},
         time::{Duration, Instant},
     },
@@ -178,6 +178,7 @@ impl ClusterNodes<RetransmitStage> {
             children,
             addrs,
         } = self.get_retransmit_peers(slot_leader, shred, fanout)?;
+
         let protocol = get_broadcast_protocol(shred);
         let peers = children.into_iter().filter_map(|node| {
             node.contact_info()?
@@ -291,6 +292,7 @@ pub fn new_cluster_nodes<T: 'static>(
         .collect();
     let broadcast = TypeId::of::<T>() == TypeId::of::<BroadcastStage>();
     let stakes: Vec<u64> = nodes.iter().map(|node| node.stake).collect();
+    println!("node stakes: {:?}\n", stakes);
     let mut weighted_shuffle = WeightedShuffle::new("cluster-nodes", &stakes);
     if broadcast {
         weighted_shuffle.remove_index(index[&self_pubkey]);
@@ -555,7 +557,8 @@ pub fn make_test_cluster<R: Rng>(
         let now = timestamp();
         let mut gossip_crds = cluster_info.gossip.crds.write().unwrap();
         // First node is pushed to crds table by ClusterInfo constructor.
-        for node in nodes.iter().skip(1) {
+        for node in nodes.iter_mut().skip(1) {
+            node.set_tvu(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(rng.gen(), rng.gen(), rng.gen(), rng.gen())), rng.gen())).unwrap();
             let node = CrdsData::ContactInfo(node.clone());
             let node = CrdsValue::new_unsigned(node);
             assert_eq!(
@@ -878,4 +881,128 @@ mod tests {
             }
         }
     }
+    
+}
+
+#[cfg(test)]
+mod equivalence {
+    use {
+        super::*, rand_chacha::ChaCha20Rng, solana_ledger::shred::{Shred, ShredFlags},
+    };
+
+    pub fn random_pubkey<R: Rng>(rng: &mut R) -> Pubkey {
+        let mut pubkey_bytes = [0u8; 32];
+        rng.fill_bytes(&mut pubkey_bytes);
+        Pubkey::from(pubkey_bytes)
+    }
+
+    pub fn make_better_test_cluster<R: Rng>(
+        rng: &mut R,                                
+        my_keypair: Arc<Keypair>,                   
+        my_stake: u64,                              
+        min_stake: u64,                             
+        max_stake: u64,                             
+        num_staked_nodes: usize,                    
+        num_staked_nodes_in_gossip_table: usize,   
+        num_unstaked_nodes_in_gossip_table: usize,
+    ) -> ( 
+        HashMap<Pubkey, u64>,
+        ClusterInfo,
+    ) {
+        let mut stakes = (0..num_staked_nodes - ((my_stake > 0) as usize))
+            .map(|_| (random_pubkey(rng), rng.gen_range(min_stake..max_stake)))
+            .collect::<HashMap<_,_>>();
+
+        let my_contact_info = ContactInfo::new_localhost(&my_keypair.pubkey(), timestamp());
+        let cluster_info = ClusterInfo::new(my_contact_info.clone(), my_keypair, SocketAddrSpace::Unspecified);
+        
+        {
+            let now = timestamp();
+            let mut gossip_crds = cluster_info.gossip.crds.write().unwrap();
+            let mut stakes_iter = stakes.iter();
+            for i in 0..num_staked_nodes_in_gossip_table + num_unstaked_nodes_in_gossip_table {
+                let pubkey = if i < num_staked_nodes_in_gossip_table { stakes_iter.next().unwrap().0.clone() } else { random_pubkey(rng) };
+                let mut node = ContactInfo::new_localhost(&pubkey, now);
+                node.set_tvu(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(rng.gen_range(128..200), rng.gen(), rng.gen(), rng.gen())), rng.gen())).unwrap();
+                let node = CrdsData::ContactInfo(ContactInfo::new_localhost(&pubkey, now));
+                let node = CrdsValue::new_unsigned(node);
+                assert_eq!(
+                    gossip_crds.insert(node, now, GossipRoute::LocalMessage),
+                    Ok(())
+                );
+            }
+        }
+
+        if my_stake > 0 { 
+            stakes.insert(my_contact_info.pubkey().clone(), my_stake);
+        }
+        
+        assert!(num_staked_nodes == stakes.len());
+        
+        (stakes, cluster_info)
+    }
+
+    #[test]
+    fn test_equivalence() {
+        let cluster_type = ClusterType::Development;
+        let my_keypair = Arc::new(Keypair::from_base58_string("5gGANi5NsyveWC3mVZ6g5Q1XpGbMhYXnfTSQRgbs4AVn3mHi846WrheDivwPETRR6A3X9MhBP9JGbnfoi5Ntgi1q"));
+        
+        { // Despite having minimum stake, we are never a leaf node.
+            let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+
+            let (stakes, cluster_info) = make_better_test_cluster(
+                &mut rng, 
+                my_keypair,                   // Keypair of this node.
+                1,                  // Stake of this node.
+                1,                 // Minimum stake of stake nodes.
+                20,                // Maximum stake of stake nodes.
+                201,        // 1 root node, 200 level one nodes.
+                100,    // 100 staked nodes with contact-info.
+                200,            // 200 nodes not in the stake map.
+            );
+
+            let cluster_nodes = new_cluster_nodes::<RetransmitStage>(&cluster_info, cluster_type, &stakes);
+
+            let weighted_shuffle = cluster_nodes.weighted_shuffle.clone();
+
+            let shuffled_indices = weighted_shuffle.shuffle(&mut rng).collect::<Vec<_>>();
+
+            println!("shuffled indices: {:?}", shuffled_indices);
+            
+            for _ in 0..10_000 {
+                let slot_leader = Pubkey::new_unique();
+                let shred = Shred::new_from_data(1_000, 0, 0, &[], ShredFlags::default(), 0, 0, 0);
+                let RetransmitPeers { root_distance, children, addrs: _} = cluster_nodes.get_retransmit_peers(&slot_leader, &shred.id(), DATA_PLANE_FANOUT).unwrap();
+                assert!(root_distance < 2);  // We have stake, so should always be 0 or 1.
+                assert!(children.len() > 0); // We have stake, so should always have children.
+            }
+        }
+    
+    }
+
+    // #[test]
+    // fn test_rng() {
+    //     let mut rng = ChaCha20Rng::from_seed([1u8; 32]);
+
+    //     assert_eq!(12, rng.gen_range(0u8..100));
+    //     assert_eq!(76, rng.gen_range(0u16..100));
+    //     assert_eq!(11, rng.gen_range(0u32..100));
+    //     assert_eq!(52, rng.gen_range(0u64..100));
+    //     assert_eq!(81, rng.gen_range(0u128..100));
+    //     assert_eq!(55, rng.gen_range(0usize..100));
+        
+    //     println!("u8:    {}", rng.gen_range(50u8..150));
+    //     println!("u16:   {}", rng.gen_range(50u16..150));
+    //     println!("u32:   {}", rng.gen_range(50u32..150));
+    //     println!("u64:   {}", rng.gen_range(50u64..150));
+    //     println!("u128:  {}", rng.gen_range(50u128..150));
+    //     println!("usize: {}", rng.gen_range(50usize..150));
+
+    //     println!("i8:  {}", rng.gen_range(-5i8..5));
+    //     println!("i16: {}", rng.gen_range(-5i16..5));
+    //     println!("i32: {}", rng.gen_range(-5i32..5));
+    //     println!("i64: {}", rng.gen_range(-5i64..5));
+    //     println!("i128: {}", rng.gen_range(-5i128..5));
+    //     println!("isize: {}", rng.gen_range(-5isize..5));
+    // }
 }

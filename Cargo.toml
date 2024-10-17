@@ -5,6 +5,7 @@ split-debuginfo = "packed"
 
 [workspace]
 members = [
+    "networking-demo",
     "account-decoder",
     "accounts-bench",
     "accounts-cluster-bench",
@@ -389,7 +390,6 @@ solana-bn254 = { path = "curves/bn254", version = "=2.1.0" }
 solana-bpf-loader-program = { path = "programs/bpf_loader", version = "=2.1.0" }
 solana-bucket-map = { path = "bucket_map", version = "=2.1.0" }
 solana-builtins-default-costs = { path = "builtins-default-costs", version = "=2.1.0" }
-agave-cargo-registry = { path = "cargo-registry", version = "=2.1.0" }
 solana-clap-utils = { path = "clap-utils", version = "=2.1.0" }
 solana-clap-v3-utils = { path = "clap-v3-utils", version = "=2.1.0" }
 solana-cli = { path = "cli", version = "=2.1.0" }
@@ -439,7 +439,6 @@ solana-native-token = { path = "sdk/native-token", version = "=2.1.0" }
 solana-net-utils = { path = "net-utils", version = "=2.1.0" }
 solana-nohash-hasher = "0.2.1"
 solana-notifier = { path = "notifier", version = "=2.1.0" }
-solana-package-metadata = { path = "sdk/package-metadata", version = "=2.1.0" }
 solana-package-metadata-macro = { path = "sdk/package-metadata-macro", version = "=2.1.0" }
 solana-perf = { path = "perf", version = "=2.1.0" }
 solana-poh = { path = "poh", version = "=2.1.0" }
@@ -483,7 +482,6 @@ solana-storage-proto = { path = "storage-proto", version = "=2.1.0" }
 solana-streamer = { path = "streamer", version = "=2.1.0" }
 solana-svm = { path = "svm", version = "=2.1.0" }
 solana-svm-conformance = { path = "svm-conformance", version = "=2.1.0" }
-solana-svm-example-paytube = { path = "svm/examples/paytube", version = "=2.1.0" }
 solana-svm-rent-collector = { path = "svm-rent-collector", version = "=2.1.0" }
 solana-svm-transaction = { path = "svm-transaction", version = "=2.1.0" }
 solana-system-program = { path = "programs/system", version = "=2.1.0" }
@@ -501,7 +499,6 @@ solana-vote = { path = "vote", version = "=2.1.0" }
 solana-vote-program = { path = "programs/vote", version = "=2.1.0" }
 solana-wen-restart = { path = "wen-restart", version = "=2.1.0" }
 solana-zk-elgamal-proof-program = { path = "programs/zk-elgamal-proof", version = "=2.1.0" }
-solana-zk-keygen = { path = "zk-keygen", version = "=2.1.0" }
 solana-zk-sdk = { path = "zk-sdk", version = "=2.1.0" }
 solana-zk-token-proof-program = { path = "programs/zk-token-proof", version = "=2.1.0" }
 solana-zk-token-sdk = { path = "zk-token-sdk", version = "=2.1.0" }
