@@ -355,7 +355,8 @@ async fn run_server(
             stats
                 .total_incoming_connection_attempts
                 .fetch_add(1, Ordering::Relaxed);
-
+            
+            println!("(run_server) Incoming connection from {:?}", incoming.remote_address());
             let remote_address = incoming.remote_address();
 
             // first check overall connection rate limit:
@@ -403,6 +404,7 @@ async fn run_server(
             stats
                 .outstanding_incoming_connection_attempts
                 .fetch_add(1, Ordering::Relaxed);
+            println!("(run_server) Accepting connection from {:?}", remote_address);
             let connecting = incoming.accept();
             match connecting {
                 Ok(connecting) => {
