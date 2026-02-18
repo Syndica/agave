@@ -5978,6 +5978,11 @@ impl AccountsDb {
                     let account_info =
                         AccountInfo::new(StorageLocation::Cached, account.is_zero_lamport());
 
+                    // DEBUG: printAccountWrite equivalent (sig: Two.zig:put)
+                    // if crate::debug::is_debug_slot(slot) {
+                    //     eprintln!("account_write: slot={} {}", slot, crate::debug::fmt_account(pubkey, &account_shared_data));
+                    // }
+
                     self.notify_account_at_accounts_update(
                         slot,
                         &account_shared_data,

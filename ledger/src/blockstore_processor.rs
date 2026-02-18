@@ -58,6 +58,7 @@ use {
         TransactionVerificationMode,
     },
     solana_transaction_error::{TransactionError, TransactionResult as Result},
+    solana_accounts_db::debug as sig_debug,
     solana_transaction_status::token_balances::TransactionTokenBalancesSet,
     solana_vote::vote_account::VoteAccountsHashMap,
     std::{
@@ -224,7 +225,9 @@ pub fn execute_batch<'a>(
         .load_execute_and_commit_transactions_with_pre_commit_callback(
             batch,
             MAX_PROCESSING_AGE,
-            ExecutionRecordingConfig::new_single_setting(transaction_status_sender.is_some()),
+            ExecutionRecordingConfig::new_single_setting(
+                transaction_status_sender.is_some() || sig_debug::is_debug_slot(bank.slot())
+            ),
             timings,
             log_messages_bytes_limit,
             pre_commit_callback,
@@ -1497,6 +1500,9 @@ pub fn confirm_slot(
     prioritization_fee_cache: &PrioritizationFeeCache,
 ) -> result::Result<(), BlockstoreProcessorError> {
     let slot = bank.slot();
+
+    // DEBUG: startAsync equivalent (sig: exec_async.zig:startAsync)
+    bank.debug_print_delta_lt_hash("startAsync");
 
     let slot_entries_load_result = {
         let mut load_elapsed = Measure::start("load_elapsed");

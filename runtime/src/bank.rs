@@ -88,6 +88,7 @@ use {
         blockhash_queue::BlockhashQueue,
         storable_accounts::StorableAccounts,
         utils::create_account_shared_data,
+        debug as sig_debug,
     },
     solana_builtins::{BUILTINS, STATELESS_BUILTINS},
     solana_clock::{
@@ -135,6 +136,7 @@ use {
         account_loader::LoadedTransaction,
         account_overrides::AccountOverrides,
         program_loader::load_program_with_pubkey,
+        rollback_accounts::RollbackAccounts,
         transaction_balances::{BalanceCollector, SvmTokenInfo},
         transaction_commit_result::{CommittedTransaction, TransactionCommitResult},
         transaction_error_metrics::TransactionErrorMetrics,
@@ -1383,9 +1385,14 @@ impl Bank {
             new.ancestors = Ancestors::from(ancestors);
         });
 
+        // DEBUG: newSlotFromParent (sig: service.zig)
+        new.debug_print_delta_lt_hash("newSlotFromParent");
+
         // Following code may touch AccountsDb, requiring proper ancestors
         let (_, update_epoch_time_us) = measure_us!({
             if parent.epoch() < new.epoch() {
+                // DEBUG: processNewEpoch (sig: service.zig)
+                new.debug_print_delta_lt_hash("processNewEpoch");
                 new.process_new_epoch(
                     parent.epoch(),
                     parent.slot(),
@@ -1393,15 +1400,22 @@ impl Bank {
                     reward_calc_tracer,
                 );
             } else {
+                // DEBUG: updateEpochStakes (sig: service.zig)
+                new.debug_print_delta_lt_hash("updateEpochStakes");
                 // Save a snapshot of stakes for use in consensus and stake weighted networking
                 let leader_schedule_epoch = new.epoch_schedule().get_leader_schedule_epoch(slot);
                 new.update_epoch_stakes(leader_schedule_epoch);
             }
+            // DEBUG: distributePartitionedEpochRewards (sig: service.zig)
+            new.debug_print_delta_lt_hash("distributePartitionedEpochRewards");
             new.distribute_partitioned_epoch_rewards();
         });
 
         let (_, cache_preparation_time_us) =
             measure_us!(new.prepare_program_cache_for_upcoming_feature_set());
+
+        // DEBUG: updateSysvarsForNewSlot (sig: service.zig)
+        new.debug_print_delta_lt_hash("updateSysvarsForNewSlot");
 
         // Update sysvars before processing transactions
         let (_, update_sysvars_time_us) = measure_us!({
@@ -1654,6 +1668,8 @@ impl Bank {
             .build()
             .expect("new rayon threadpool"));
 
+        // DEBUG: applyFeatureActivations (sig: epoch_transitions.zig)
+        self.debug_print_delta_lt_hash("applyFeatureActivations");
         let (_, apply_feature_activations_time_us) = measure_us!(
             thread_pool.install(|| { self.compute_and_apply_new_feature_activations() })
         );
@@ -1672,16 +1688,22 @@ impl Bank {
             &mut rewards_metrics,
         );
 
+        // DEBUG: activateEpoch (sig: epoch_transitions.zig)
+        self.debug_print_delta_lt_hash("activateEpoch");
         self.stakes_cache
             .activate_epoch(epoch, stake_history, vote_accounts);
 
         // Save a snapshot of stakes for use in consensus and stake weighted networking
         let leader_schedule_epoch = self.epoch_schedule.get_leader_schedule_epoch(slot);
+        // DEBUG: updateEpochStakes (sig: epoch_transitions.zig)
+        self.debug_print_delta_lt_hash("updateEpochStakes_in_process_new_epoch");
         let (_, update_epoch_stakes_time_us) =
             measure_us!(self.update_epoch_stakes(leader_schedule_epoch));
 
         // Distribute rewards commission to vote accounts and cache stake rewards
         // for partitioned distribution in the upcoming slots.
+        // DEBUG: beginPartitionedRewards (sig: epoch_transitions.zig)
+        self.debug_print_delta_lt_hash("beginPartitionedRewards");
         self.begin_partitioned_rewards(
             parent_epoch,
             parent_slot,
@@ -2482,6 +2504,8 @@ impl Bank {
     }
 
     pub fn freeze(&self) {
+        // DEBUG: freezeSlot (sig: freeze.zig)
+        self.debug_print_delta_lt_hash("freezeSlot");
         // This lock prevents any new commits from BankingStage
         // `Consumer::execute_and_commit_transactions_locked()` from
         // coming in after the last tick is observed. This is because in
@@ -3553,6 +3577,29 @@ impl Bank {
         self.bank_hash_stats.accumulate(&stats);
     }
 
+    pub fn collect_for_successful<'a, T: SVMMessage>(
+        tx: &'a T,
+        accounts: &'a [KeyedAccountSharedData],
+    ) -> Vec<(&'a Pubkey, &'a AccountSharedData)> {
+        (0..tx.account_keys().len()).zip(accounts.iter())
+            .filter_map(|(i, (address, account))| {
+                if !tx.is_writable(i) {
+                    return None;
+                }
+                if tx.is_invoked(i) && !tx.is_instruction_account(i) {
+                    return None;
+                }
+                Some((address, account))
+            })
+            .collect()
+    }
+
+    pub fn collect_for_failed<'a>(
+        accounts: &'a RollbackAccounts,
+    ) -> Vec<(&'a Pubkey, &'a AccountSharedData)> {
+        accounts.iter().map(|(address, account)| (address, account)).collect()
+    }
+
     pub fn commit_transactions(
         &self,
         sanitized_txs: &[impl TransactionWithMeta],
@@ -3565,6 +3612,40 @@ impl Bank {
             "commit_transactions() working on a bank that is already frozen or is undergoing \
              freezing!"
         );
+        
+        if sig_debug::is_debug_slot(self.slot()) {
+            for (tx, result) in sanitized_txs.iter().zip(&processing_results).into_iter() {
+                if result.processed_transaction().is_none() { continue; }
+                let result = result.processed_transaction().unwrap();
+                let writes = match result {
+                    ProcessedTransaction::Executed(executed_tx) => {
+                        let writes = if executed_tx.was_successful() {
+                            eprintln!("transaction({}): success", tx.message_hash());
+                            Bank::collect_for_successful(tx, &executed_tx.loaded_transaction.accounts)
+                        } else {
+                            eprintln!("transaction({}): exec-error={:?}", tx.message_hash(), executed_tx.execution_details.status);
+                            Bank::collect_for_failed(&executed_tx.loaded_transaction.rollback_accounts)
+                        };
+
+                        if executed_tx.execution_details.log_messages.is_some() {
+                            for (i, log_message) in executed_tx.execution_details.log_messages.as_ref().unwrap().iter().enumerate() {
+                                eprintln!("  transaction({}):log: {} {}", tx.message_hash(), i+1, log_message);
+                            }
+                        }
+
+                        writes
+                    }
+                    ProcessedTransaction::FeesOnly(fees_only_tx) => {
+                        eprintln!("transaction({}):log: fee-only-error: {:?}", tx.message_hash(), fees_only_tx.load_error);
+                        Bank::collect_for_failed(&fees_only_tx.rollback_accounts)
+                    }
+                };
+                for (address, account) in writes {
+                    let account_info = sig_debug::fmt_account(address, account);
+                    eprintln!("  transaction({}):write: {}", tx.message_hash(), account_info);
+                }
+            }
+        }
 
         let ProcessedTransactionCounts {
             processed_transactions_count,

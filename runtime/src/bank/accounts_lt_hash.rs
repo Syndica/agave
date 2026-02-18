@@ -2,7 +2,7 @@ use {
     super::Bank,
     rayon::prelude::*,
     solana_account::{accounts_equal, AccountSharedData},
-    solana_accounts_db::accounts_db::AccountsDb,
+    solana_accounts_db::{accounts_db::AccountsDb, debug as sig_debug},
     solana_hash::Hash,
     solana_lattice_hash::lt_hash::LtHash,
     solana_measure::{meas_dur, measure::Measure},
@@ -16,6 +16,15 @@ use {
 };
 
 impl Bank {
+    /// Print delta LT hash for debug slots (equivalent to sig's debug.print with getDeltaLtHash)
+    pub fn debug_print_delta_lt_hash(&self, label: &str) {
+        if !sig_debug::is_debug_slot(self.slot()) {
+            return;
+        }
+        let delta_lt_hash = self.calculate_delta_lt_hash();
+        eprintln!("{}: delta_lt_hash={}", label, delta_lt_hash);
+    }
+
     /// Updates the accounts lt hash
     ///
     /// When freezing a bank, we compute and update the accounts lt hash.

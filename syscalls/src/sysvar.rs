@@ -10,6 +10,7 @@ fn get_sysvar<T: std::fmt::Debug + SysvarSerialize + Clone>(
     memory_mapping: &mut MemoryMapping,
     invoke_context: &mut InvokeContext,
 ) -> Result<u64, Error> {
+    eprintln!("  get_sysvar: var_addr={:x} check_aligned={}", var_addr, check_aligned);
     consume_compute_meter(
         invoke_context,
         invoke_context
